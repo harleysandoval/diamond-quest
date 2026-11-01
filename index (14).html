@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Diamond Quest</title>
+<style>
+  body{margin:0;background:#140e0a;color:#f1deb8;font-family:"Courier New",monospace;font-weight:bold;text-align:center;touch-action:none;user-select:none}
+  h1{font-size:20px;margin:10px 0 2px;letter-spacing:3px;color:#5ee6ff;text-shadow:2px 2px #1b3a4a}
+  #hud{font-size:15px;margin:4px 0;min-height:38px}
+  #msg{height:20px;color:#ffd23f;font-size:14px}
+  canvas{image-rendering:pixelated;border:4px solid #6b4f3a;background:#000}
+  #pad{display:grid;grid-template-columns:repeat(3,62px);gap:6px;justify-content:center;margin:10px 0}
+  #pad button,#rs{background:#6b4f3a;color:#f1deb8;border:3px solid #3c2d22;font:inherit;font-size:22px;height:54px;border-radius:0}
+  #rs{font-size:14px;padding:0 14px;height:38px}
+  .e{visibility:hidden}
+  .mb,#mn{background:#6b4f3a;color:#f1deb8;border:3px solid #3c2d22;font:inherit;font-size:16px;height:46px;border-radius:0}
+  .mb{display:block;width:240px;margin:12px auto}
+  #lvgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;max-width:340px;margin:10px auto;padding:0 10px}
+  .lvb{height:46px;font:inherit;font-size:16px;border:3px solid #3c2d22;border-radius:0}
+  .done{background:#4a7a3a;color:#fff}.cur{background:#ffd23f;color:#222}.lock{background:#3a3a3a;color:#777}
+  .sw{width:38px;height:38px;border:3px solid #3c2d22;margin:3px;border-radius:0;padding:0}.sw.on{border-color:#fff}
+  #pv{width:128px;height:128px;image-rendering:pixelated;background:#2b211b;border:4px solid #6b4f3a;margin:8px 0}
+  #swatches div{margin-top:8px;font-size:13px}
+  input{display:block;width:240px;box-sizing:border-box;margin:8px auto;padding:10px;font:inherit;font-size:16px;background:#2b211b;color:#f1deb8;border:3px solid #6b4f3a;border-radius:0}
+  #lmsg{min-height:18px;color:#ffd23f;font-size:13px}#who{font-size:14px;margin:6px 0;color:#5ee6ff}
+</style>
+</head>
+<body>
+<h1>DIAMOND QUEST</h1>
+<div id="menu">
+  <div id="m-main">
+    <div id="who"></div>
+    <button class="mb" id="b-play">JUGAR</button>
+    <button class="mb" id="b-lv">NIVELES</button>
+    <button class="mb" id="b-av">PERSONALIZAR</button>
+    <button class="mb" id="b-rs">REINICIAR JUEGO</button>
+    <button class="mb" id="b-out">CERRAR SESIÓN</button>
+  </div>
+  <div id="m-login" style="display:none">
+    <div>CUENTA</div>
+    <input id="u" placeholder="Usuario (letras y números)" maxlength="16" autocomplete="username">
+    <input id="p" type="password" placeholder="Contraseña (mín. 6)" autocomplete="current-password">
+    <div id="lmsg"></div>
+    <button class="mb" id="b-in">ENTRAR</button>
+    <button class="mb" id="b-new">CREAR CUENTA</button>
+  </div>
+  <div id="m-lv" style="display:none"><div>NIVELES</div><div id="lvgrid"></div><button class="mb back">VOLVER</button></div>
+  <div id="m-av" style="display:none"><div>PERSONALIZAR</div><canvas id="pv" width="16" height="16"></canvas><div id="swatches"></div><button class="mb back">VOLVER</button></div>
+</div>
+<div id="game" style="display:none">
+<div id="hud"></div>
+<div id="msg"></div>
+<canvas id="c" width="144" height="144"></canvas>
+<div id="pad">
+  <span class="e"></span><button data-d="0,-1">▲</button><span class="e"></span>
+  <button data-d="-1,0">◀</button><button data-d="0,1">▼</button><button data-d="1,0">▶</button>
+</div>
+<button id="rs">REINICIAR NIVEL</button> <button id="mn">MENÚ</button>
+<p style="font-size:12px;opacity:.7;padding:0 12px">Junta los diamantes y llega a la bandera. Empuja rocas sobre los enemigos para aplastarlos. Cada 5 ciudades te espera un jefe legendario.</p>
+</div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// ---------- ZONAS: 5 ciudades + 1 jefe por país. Para agregar más, añade un objeto aquí y un sprite en BOSS ----------
+// pal = [muro, juntas, brillo, piso, motas]
+const Z=[
+ {n:'EE.UU.',c:['Salem','Nueva Orleans','Roswell','Chicago','Sleepy Hollow'],b:'Wendigo',pal:['#5d6b4a','#2e3825','#7a8a62','#2b3324','#232a1c']},
+ {n:'RUSIA',c:['Moscú','San Petersburgo','Kazán','Novosibirsk','Volgogrado'],b:'Baba Yaga',pal:['#6a7d99','#2f3b52','#9bb0cc','#27303f','#1f2733']},
+ {n:'TURQUÍA',c:['Estambul','Capadocia','Ankara','Éfeso','Esmirna'],b:'Aisha Qandisha',pal:['#a8744a','#5a3a22','#cf9a6a','#4a3524','#3b2a1c']},
+ {n:'PERÚ',c:['Lima','Cusco','Arequipa','Iquitos','Trujillo'],b:'La Dama Tapada',pal:['#6b5a3a','#33291a','#8f7a50','#33281a','#2a2115']},
+ {n:'GRECIA',c:['Atenas','Esparta','Delfos','Corinto','Cnosos'],b:'Minotauro',pal:['#b8b2a6','#6b665c','#e2ddd0','#3a3d4a','#2f323d']}
+];
+const BOSS=[
+ {p:{a:'#e8dcc0',b:'#5a4a3a',r:'#ff3030'},r:["a.a..a.a",".aaaaaa.","..bbbb..",".brbbrb.","..bbbb..",".bbbbbb.","b.bbbb.b","b..bb..b"]},
+ {p:{h:'#8f6bb3',f:'#7aa86a',k:'#3a2a1a',r:'#ff3030'},r:["...hh...","..hhhh..",".hhhhhh.","..ffff..",".frffrf.","..fkkf..",".hhhhhh.",".h.hh.h."]},
+ {p:{v:'#a0306a',g:'#f0c0a0',r:'#ffd23f'},r:["..vvvv..",".vvvvvv.",".vgrrgv.",".vvvvvv.","..vvvv..",".vvvvvv.","..vvvv..","..g..g.."]},
+ {p:{m:'#2a2a35',e:'#ffd23f'},r:["..mmmm..",".mmmmmm.",".mmemmm.",".mmmmmm.","..mmmm..",".mmmmmm.","mmmmmmmm","mmmmmmmm"]},
+ {p:{h:'#e8dcc0',b:'#7a4a2a',r:'#ff3030'},r:["h......h","hh....hh",".hbbbbh.","..brrb..","..bbbb..",".bbbbbb.","bbbbbbbb",".bb..bb."]}
+];
+
+// ---------- SPRITES PIXEL ART ----------
+const PLAYER=[
+".....hhhhhh.....","....hhhhhhhh....","....hssssssh....","....sfkssfks....","....ssssssss....",".....ssssss.....",
+"..GGGGGcGGGGG...",".GGGGGGcGGGGGG..","sGGGGGGcGGGGGGs.","sGGGGGbbbGGGGGs.","..G.bbbBbbbb.G..",".....bbbbbbbb...",
+".....bbbbbbbb...",".....bbbbbbbb...",".....bbbbbbbb...","....kkk..kkk...."];
+const PP={h:'#1a1410',s:'#c98f65',f:'#9ad0e6',k:'#14100d',G:'#2f4a2e',c:'#e8dcc0',b:'#1c1c22',B:'#3a3a44'};
+const SP={
+D:{p:{c:'#5ee6ff',w:'#ffffff',b:'#1b8fb3'},r:["........","..cccc..",".cwcccb.","cwcccccb",".cccccb.","..cccb..","...cb...","........"]},
+R:{p:{g:'#8a8a8a',L:'#bdbdbd',d:'#5a5a5a'},r:["........","..gggg..",".gLLggd.","gLggggdd","ggggdddd","gdddddd.",".dddddd.","........"]},
+X:{p:{s:'#c0c0c0',w:'#fff',d:'#555'},r:["........",".w..w..w",".s..s..s","ss.ss.ss","ss.ss.ss","ssssssss","dddddddd","........"]},
+E:{p:{p:'#8a5a2b',r:'#e03c31'},r:[".p......",".prrrr..",".prrrrr.",".prrrr..",".p......",".p......","pppppp..","........"]},
+S:{p:{w:'#e8e8e0',k:'#111'},r:["..wwww..",".wkwwkw.","..wwww..","..w..w..","..wwww..",".w.ww.w.","..wwww..",".ww..ww."]},
+b:{p:{p:'#8f3fbf',r:'#ff3030'},r:["p......p","pp.pp.pp","pppppppp",".prpprp.",".pppppp.","..p..p..","........","........"]}
+};
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+cv.style.width=cv.style.height=Math.min(innerWidth-24,460)+'px';
+
+function spr(rows,pal,x,y,sc,flip,cx=ctx){
+  const w=rows[0].length;
+  rows.forEach((row,r)=>[...row].forEach((ch,c)=>{
+    if(ch==='.')return;
+    cx.fillStyle=pal[ch];
+    cx.fillRect(x+(flip?w-1-c:c)*sc,y+r*sc,sc,sc);
+  }));
+}
+function floor(x,y,gx,gy,P){
+  ctx.fillStyle=P[3];ctx.fillRect(x,y,16,16);
+  ctx.fillStyle=P[4];
+  const h=(gx*37+gy*91)%7;
+  if(h<2)ctx.fillRect(x+3+h*5,y+4,2,2);
+  if(h===3)ctx.fillRect(x+10,y+11,3,1);
+  if(h===5)ctx.fillRect(x+6,y+9,1,1);
+}
+function wall(x,y,P){
+  ctx.fillStyle=P[0];ctx.fillRect(x,y,16,16);
+  ctx.fillStyle=P[1];
+  ctx.fillRect(x,y,16,1);ctx.fillRect(x,y+8,16,1);
+  ctx.fillRect(x+8,y,1,8);ctx.fillRect(x,y+8,1,8);
+  ctx.fillStyle=P[2];
+  ctx.fillRect(x+1,y+1,7,1);ctx.fillRect(x+9,y+1,6,1);ctx.fillRect(x+1,y+9,14,1);
+}
+
+// ---------- GENERADOR DE MAZMORRAS (siempre resolubles, fijas por nivel) ----------
+function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const OPEN=c=>'.DE'.includes(c);
+function build(i){
+  const k=i%6,zi=i/6|0,boss=k===5,R=rng(i*977+13);
+  const m=Array.from({length:9},(_,y)=>Array.from({length:9},(_,x)=>x%8&&y%8?'.':'#'));
+  const ok=()=>{
+    const seen=new Set(['1,1']),q=[[1,1]];let n=0;
+    while(q.length){
+      const[x,y]=q.pop();n++;
+      for(const[a,b]of[[1,0],[-1,0],[0,1],[0,-1]]){
+        const X=x+a,Y=y+b;
+        if(OPEN(m[Y][X])&&!seen.has(X+','+Y)){seen.add(X+','+Y);q.push([X,Y])}
+      }
+    }
+    return n===m.flat().filter(OPEN).length;
+  };
+  const cells=[];
+  const place=(ch,n,far)=>{
+    let t=0,c=0;
+    while(c<n&&t++<300){
+      const x=1+R()*7|0,y=1+R()*7|0;
+      if(m[y][x]!=='.'||(x<3&&y<3)||(far&&x+y<9))continue;
+      m[y][x]=ch;
+      if(ok()){c++;cells.push([x,y])}else m[y][x]='.';
+    }
+  };
+  const en=[];
+  if(!boss)m[7][7]='E';
+  place('#',boss?4:9+k);
+  place('R',boss?6:3);
+  place('X',boss?3:1+(k>>1));
+  if(!boss)place('D',Math.min(4+k,8));
+  if(boss)en.push({x:7,y:7,t:'W',hp:3});
+  else{
+    const sk=((k+1)>>1)+(zi>>1),bt=k>=3?1+(zi>>2):0;
+    for(let n=0;n<sk;n++){place('e',1,true);}
+    for(let n=0;n<bt;n++){place('f',1,true);}
+    m.forEach((row,y)=>row.forEach((c,x)=>{
+      if(c==='e'||c==='f'){en.push({x,y,t:c==='e'?'S':'b',hp:1});m[y][x]='.'}
+    }));
+  }
+  return{m,en};
+}
+
+// ---------- JUEGO ----------
+let g,en,px,py,dia,tot,lv=0,busy=false,face=false,bob=0,turn=0;
+const TOTAL=Z.length*6;
+const at=(x,y)=>en.find(e=>e.x===x&&e.y===y);
+// En cada intento los enemigos aparecen en lugares distintos (el mapa sí es fijo)
+function scatter(){
+  en.forEach(e=>{
+    for(let t=0;t<80;t++){
+      const x=1+Math.random()*7|0,y=1+Math.random()*7|0;
+      if(g[y][x]==='.'&&x+y>=(e.t==='W'?10:8)&&!at(x,y)){e.x=x;e.y=y;break}
+    }
+  });
+}
+function load(n){
+  const b=build(n);g=b.m;en=b.en;scatter();busy=false;dia=0;tot=0;turn=0;px=1;py=1;
+  g.forEach(r=>r.forEach(t=>{if(t==='D')tot++}));
+  const z=Z[n/6|0],k=n%6;
+  say(k===5?'¡JEFE: '+z.b+'!':z.n+' · '+z.c[k]);
+  draw();
+}
+function say(t){document.getElementById('msg').textContent=t}
+function draw(dead){
+  const zi=lv/6|0,k=lv%6,z=Z[zi],P=z.pal,boss=k===5;
+  const w=en.find(e=>e.t==='W');
+  document.getElementById('hud').innerHTML=
+    `${z.n} · ${boss?'JEFE '+z.b:z.c[k]}<br>NIVEL ${lv+1}/${TOTAL}  `+(boss?`♥ ${w?w.hp:0}/3`:`◆ ${dia}/${tot}`);
+  g.forEach((r,y)=>r.forEach((t,x)=>{
+    const X=x*16,Y=y*16;
+    if(t==='#'){wall(X,Y,P);return}
+    floor(X,Y,x,y,P);
+    if(SP[t]){
+      if(t==='E'&&dia<tot)ctx.globalAlpha=.35;
+      spr(SP[t].r,SP[t].p,X,Y,2);
+      ctx.globalAlpha=1;
+    }
+  }));
+  en.forEach(e=>{
+    const X=e.x*16,Y=e.y*16;
+    if(e.t==='W'){
+      ctx.fillStyle='rgba(255,0,0,.3)';ctx.fillRect(X,Y,16,16);
+      spr(BOSS[zi].r,BOSS[zi].p,X,Y,2);
+      ctx.fillStyle='#f33';ctx.fillRect(X+2,Y,e.hp*4,2);
+    }else spr(SP[e.t].r,SP[e.t].p,X,Y,2);
+  });
+  ctx.fillStyle='rgba(0,0,0,.35)';ctx.fillRect(px*16+3,py*16+14,10,2);
+  spr(PLAYER,PP,px*16,py*16-bob,1,face);
+  if(dead){ctx.fillStyle='rgba(255,0,0,.45)';ctx.fillRect(px*16,py*16,16,16)}
+}
+function die(msg){
+  busy=true;draw(true);say(msg);
+  setTimeout(()=>{if(inGame)load(lv)},800);
+}
+function win(){
+  busy=true;draw();
+  if(lv+1>prog){prog=lv+1;save()}
+  if(lv<TOTAL-1){
+    say(lv%6===5?'¡Derrotaste al jefe!':'¡Ciudad completada!');
+    setTimeout(()=>{if(inGame){lv++;load(lv)}},1000);
+  }else say('★ ¡LEYENDAS DERROTADAS! GANASTE ★');
+}
+function hit(e){
+  e.hp--;
+  if(e.hp<=0)en=en.filter(x=>x!==e);
+  if(e.t==='W'){
+    if(e.hp<=0){win();return true}
+    // reaparece una roca para no quedarse sin munición
+    if(g.flat().filter(c=>c==='R').length<2){
+      for(let t=0;t<60;t++){
+        const x=1+Math.random()*7|0,y=1+Math.random()*7|0;
+        if(g[y][x]==='.'&&!at(x,y)&&!(x===px&&y===py)){g[y][x]='R';break}
+      }
+    }
+  }
+}
+function enemyTurn(){
+  turn++;
+  for(const e of en){
+    // esqueletos y jefe: a veces se detienen, a veces se desvían, a veces te persiguen
+    if(e.t!=='b'&&Math.random()<(e.t==='W'?.5:.45))continue;
+    let opts;
+    if(e.t==='b'||Math.random()<.25)opts=[[1,0],[-1,0],[0,1],[0,-1]].sort(()=>Math.random()-.5);
+    else{
+      const a=px-e.x,b=py-e.y,h=[[Math.sign(a),0],[0,Math.sign(b)]];
+      opts=(Math.abs(a)>Math.abs(b))===(Math.random()<.75)?h:h.reverse();
+    }
+    for(const[a,b]of opts){
+      if(!a&&!b)continue;
+      const X=e.x+a,Y=e.y+b,c=g[Y][X];
+      if(OPEN(c)||c==='X'){
+        if(at(X,Y))continue;
+        e.x=X;e.y=Y;
+        if(c==='X'&&e.t!=='W')e.hp=0;
+        break;
+      }
+    }
+  }
+  en=en.filter(e=>e.hp>0);
+  return en.some(e=>e.x===px&&e.y===py);
+}
+function move(dx,dy){
+  if(busy||!inGame)return;
+  const nx=px+dx,ny=py+dy,t=g[ny][nx];
+  say('');
+  if(dx)face=dx<0;
+  if(t==='#')return;
+  const e=at(nx,ny);
+  if(e){px=nx;py=ny;die('¡Te atrapó!');return}
+  if(t==='R'){
+    const rx=nx+dx,ry=ny+dy,r=g[ry][rx],e2=at(rx,ry);
+    if(e2){g[ny][nx]='.';if(hit(e2))return}
+    else if(r==='.'){g[ry][rx]='R';g[ny][nx]='.'}
+    else if(r==='X'){g[ry][rx]='.';g[ny][nx]='.'}
+    else return;
+  }else if(t==='D'){dia++;g[ny][nx]='.'}
+  else if(t==='X'){px=nx;py=ny;die('¡Pinchos!');return}
+  else if(t==='E'){
+    if(dia<tot){say('Aún faltan diamantes');return}
+    px=nx;py=ny;win();return;
+  }
+  px=nx;py=ny;bob=1;
+  if(enemyTurn()){die('¡Te atrapó!');return}
+  draw();
+  setTimeout(()=>{bob=0;if(!busy)draw()},90);
+}
+addEventListener('keydown',e=>{
+  if(!inGame)return;
+  const m={ArrowUp:[0,-1],w:[0,-1],ArrowDown:[0,1],s:[0,1],ArrowLeft:[-1,0],a:[-1,0],ArrowRight:[1,0],d:[1,0]}[e.key];
+  if(m){e.preventDefault();move(...m)}
+});
+document.querySelectorAll('#pad button').forEach(b=>b.onclick=()=>move(...b.dataset.d.split(',').map(Number)));
+document.getElementById('rs').onclick=()=>load(lv);
+let sx,sy;
+cv.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
+cv.addEventListener('touchend',e=>{
+  const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
+  if(Math.max(Math.abs(dx),Math.abs(dy))<20)return;
+  Math.abs(dx)>Math.abs(dy)?move(dx>0?1:-1,0):move(0,dy>0?1:-1);
+});
+document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
+// ---------- MENÚ, GUARDADO Y PERSONALIZACIÓN ----------
+const $=id=>document.getElementById(id),SK='dq_save_v1';
+let prog=0,inGame=false;
+const AV={s:'#c98f65',h:'#1a1410',G:'#2f4a2e'};
+const OPT={
+  s:['#f5d9c0','#f1c7a0','#c98f65','#a86f48','#7a4a2c','#5a3320'],
+  h:['#1a1410','#4a2e1a','#8a5a2b','#d9b36a','#b03a2e','#cfd3d8'],
+  G:['#2f4a2e','#2e4a8a','#8a2e2e','#6a2e8a','#c9a227','#2e2e33']
+};
+const NAME={s:'TONO DE PIEL',h:'COLOR DE PELO',G:'COLOR DE CHAQUETA'};
+// ---------- FIREBASE (cuentas y guardado en la nube) ----------
+// Si el login falla con "apiKey inválida", copia de nuevo el firebaseConfig desde la consola de Firebase.
+const firebaseConfig={
+  apiKey:"AIzaSyCi5b5kx17XbCI25deqxaYlbMT2MS5WoEI",
+  authDomain:"diamonnd-quest.firebaseapp.com",
+  projectId:"diamonnd-quest",
+  storageBucket:"diamonnd-quest.firebasestorage.app",
+  messagingSenderId:"346752412244",
+  appId:"1:346752412244:web:de39424c6a5caccb27dbc1"
+};
+const FB=typeof firebase!=='undefined';
+let auth,db;
+if(FB){firebase.initializeApp(firebaseConfig);auth=firebase.auth();db=firebase.firestore()}
+const DEF={...AV},DOM='@diamondquest.game';
+let cur=null,pending=null;
+function save(){
+  if(!cur||!FB)return;
+  db.collection('players').doc(cur).set({prog,AV:{...AV}},{merge:true}).catch(()=>{});
+}
+function applyAV(){PP.s=AV.s;PP.h=AV.h;PP.G=AV.G}
+function enter(uid,d){
+  cur=uid;prog=Math.min(d.prog|0,TOTAL);Object.assign(AV,DEF,d.AV);applyAV();
+  $('who').textContent='Jugador: '+d.name;$('u').value=$('p').value='';$('lmsg').textContent='';
+  openMenu();
+}
+function show(id){['m-login','m-main','m-lv','m-av'].forEach(s=>$(s).style.display=s===id?'block':'none')}
+function openMenu(){inGame=false;$('game').style.display='none';$('menu').style.display='block';show('m-main')}
+function play(n){lv=n;inGame=true;$('menu').style.display='none';$('game').style.display='block';load(n)}
+function renderLv(){
+  const grid=$('lvgrid');grid.innerHTML='';
+  for(let i=0;i<TOTAL;i++){
+    const b=document.createElement('button'),done=i<prog,cur=i===prog;
+    b.className='lvb '+(done?'done':cur?'cur':'lock');
+    b.textContent=done?i+1:cur?'▶':'?';
+    if(i<=prog)b.onclick=()=>play(i);else b.disabled=true;
+    grid.appendChild(b);
+  }
+}
+function renderAv(){
+  const box=$('swatches');box.innerHTML='';
+  for(const k in OPT){
+    const t=document.createElement('div');t.textContent=NAME[k];box.appendChild(t);
+    OPT[k].forEach(c=>{
+      const b=document.createElement('button');
+      b.className='sw'+(AV[k]===c?' on':'');b.style.background=c;
+      b.onclick=()=>{AV[k]=c;applyAV();save();renderAv()};
+      box.appendChild(b);
+    });
+  }
+  const c2=$('pv').getContext('2d');c2.clearRect(0,0,16,16);spr(PLAYER,PP,0,0,1,false,c2);
+}
+$('b-play').onclick=()=>play(Math.min(prog,TOTAL-1));
+$('b-lv').onclick=()=>{renderLv();show('m-lv')};
+$('b-av').onclick=()=>{renderAv();show('m-av')};
+$('b-rs').onclick=()=>{if(confirm('¿Reiniciar todo el juego? Se borrará tu progreso.')){prog=0;save()}};
+document.querySelectorAll('.back').forEach(b=>b.onclick=()=>show('m-main'));
+$('mn').onclick=openMenu;
+const lm=t=>$('lmsg').textContent=t;
+const ERR={
+  'auth/email-already-in-use':'Ese usuario ya existe',
+  'auth/invalid-credential':'Usuario o contraseña incorrectos',
+  'auth/user-not-found':'Usuario o contraseña incorrectos',
+  'auth/wrong-password':'Usuario o contraseña incorrectos',
+  'auth/weak-password':'Contraseña: mínimo 6 caracteres',
+  'auth/network-request-failed':'Sin conexión a internet',
+  'auth/too-many-requests':'Demasiados intentos, espera un momento',
+  'auth/operation-not-allowed':'Activa Correo/contraseña en Firebase Authentication',
+  'auth/invalid-api-key':'apiKey inválida: copia de nuevo el firebaseConfig'
+};
+const fail=e=>lm(ERR[e.code]||('Error: '+(e.code||e.message)));
+const uname=()=>$('u').value.trim().toLowerCase();
+const okName=n=>/^[a-z0-9_]{3,16}$/.test(n);
+$('b-new').onclick=async()=>{
+  if(!FB)return lm('Firebase no cargó');
+  const n=uname(),p=$('p').value;
+  if(!okName(n))return lm('Usuario: 3-16 letras, números o _');
+  if(p.length<6)return lm('Contraseña: mínimo 6 caracteres');
+  lm('Creando cuenta...');pending=n;
+  try{await auth.createUserWithEmailAndPassword(n+DOM,p)}catch(e){pending=null;fail(e)}
+};
+$('b-in').onclick=async()=>{
+  if(!FB)return lm('Firebase no cargó');
+  const n=uname();
+  if(!okName(n))return lm('Usuario o contraseña incorrectos');
+  lm('Entrando...');
+  try{await auth.signInWithEmailAndPassword(n+DOM,$('p').value)}catch(e){fail(e)}
+};
+$('p').onkeydown=e=>{if(e.key==='Enter')$('b-in').click()};
+$('b-out').onclick=()=>{if(FB)auth.signOut()};
+$('menu').style.display='block';show('m-login');lm('Conectando...');
+if(FB){
+  auth.onAuthStateChanged(async u=>{
+    if(!u){
+      cur=null;Object.assign(AV,DEF);applyAV();prog=0;inGame=false;
+      $('u').value=$('p').value='';$('game').style.display='none';
+      $('menu').style.display='block';show('m-login');lm('');return;
+    }
+    try{
+      const ref=db.collection('players').doc(u.uid);
+      let snap=await ref.get();
+      if(!snap.exists){
+        await ref.set({name:pending||u.email.split('@')[0],prog:0,AV:{...DEF}});
+        snap=await ref.get();
+      }
+      pending=null;enter(u.uid,snap.data());
+    }catch(e){fail(e);lm('No se pudo leer tu progreso: revisa las reglas de Firestore')}
+  });
+}else lm('Sin conexión con Firebase');
+</script>
+</body>
+</html>
